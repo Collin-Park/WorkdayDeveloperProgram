@@ -77,11 +77,12 @@ function filterEvents(session: Session, config: GetSessionConfig): Session {
 // event through to the Router (`/sandbox/v1/sessions`). A new microVM starts
 // with an empty memory and loads the session from the Router.
 //
-// A failed Router call never fails the turn. The SDK logs an error, and a
-// failed create or append waits in a per-session queue. Later operations for
-// that session queue behind it, because the Router applies state deltas in
-// arrival order. The queue is sent, in order, on the next call for the
-// session that has credentials.
+// A failed Router call never fails the turn. This service logs an error. A
+// create or append that fails with a network error, 408, 429 or 5xx waits in
+// a per-session queue; any other 4xx is dropped, not retried. Later
+// operations for that session queue behind a waiting one, because the Router
+// applies state deltas in arrival order. The queue is sent, in order, on the
+// next call for the session that has credentials.
 export class RouterSessionService extends BaseSessionService {
   private readonly cache = new Map<string, Session>();
   private readonly pending = new Map<string, PendingOperation[]>();

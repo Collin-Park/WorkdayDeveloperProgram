@@ -4,7 +4,7 @@
 
 A complete Custom Agent built with the Google [Agent Development Kit](https://adk.dev) for TypeScript (`@google/adk` 2.5) and served over the [A2A protocol](https://a2a-protocol.org). Copy it to start your own agent. You need access to the Workday custom-agent Early Access program to deploy it.
 
-The agent runs in a MicroVM. It reaches Workday only through the Router: model inference, Workday tools (MCP), and session storage all go to the Router with the credentials of the current turn. The sample agent is an expenses assistant; change the instruction and the tools in the agent card to build a different one.
+The agent runs in a MicroVM. It reaches Workday only through the Router: model inference, Workday tools (MCP), and session storage all go to the Router with the credentials of the current turn. The instruction in `src/agent.ts` is a generic Workday assistant. The expenses sample is in `wd_agent_card.json`: one expenses skill and its tools. Change the instruction and the card to build your own agent.
 
 In the code and environment variables, `AC Router` and `AC_ROUTER_*` mean the Router.
 
@@ -17,8 +17,7 @@ In the code and environment variables, `AC Router` and `AC_ROUTER_*` mean the Ro
 - `src/turn-credentials.ts`: keeps this turn's `X-ACR-Token` and `wd-tenant` in `AsyncLocalStorage`.
 - `src/router-credentials.ts`: the Router URL and the credentials for every outbound call.
 - `src/session/`: `RouterSessionService` (sessions stored through the Router's `/sandbox/v1/sessions`) and the `/dev/urandom` ID provider.
-- `src/logger.ts`: console logging with secrets redacted.
-- `src/verify-a2a.ts`: a CLI that sends one A2A message to a running agent.
+- `src/logger.ts`: verbose console logging. Only the token and the `authorization`/`cookie` headers are redacted; request and response bodies are logged truncated (see "Before you deploy").
 - `src/**/*.test.ts`: unit tests (Node's built-in test runner). They make no network calls.
 - `wd_agent_card.json`: the agent card you register.
 - `appspec.yaml`: build and start commands for the platform.
@@ -154,7 +153,7 @@ export function createRouterMcpToolset(fetchImpl: typeof fetch = fetch): BaseToo
   tools: [createRouterMcpToolset()],
 ```
 
-`OptionalToolset` caches the tool list for 10 minutes per tenant, and gives the turn no tools (instead of failing it) when listing fails.
+`OptionalToolset` keeps the last successful tool list for 10 minutes, as one entry for one tenant (a turn for another tenant lists again), and gives the turn no tools (instead of failing it) when listing fails.
 
 The Router returns only the tools that are listed in the agent card and whose skill is active. In `wd_agent_card.json`, list each tool under `workdayConfig[].workdayResources` with its `agent_resource` id, and use one skill only. More than one skill currently fails with `invalid_scope`.
 
@@ -192,7 +191,7 @@ The Router returns only the tools that are listed in the agent card and whose sk
 
 The turn continues, and errors are logged:
 
-- Sessions: a failed create or append is logged and queued for that session. The queue is sent, in order, on the next call for the session that has credentials. A failed read is logged, and the turn runs without the stored history.
+- Sessions: a create or append that fails with a network error, 408, 429, or 5xx is logged and queued for that session. The queue is sent, in order, on the next call for the session that has credentials. Any other 4xx is logged and the operation is dropped, not retried. A failed read is logged, and the turn runs without the stored history.
 - Tools: if the tool list fails, a warning is logged and the turn runs with no tools.
 
 Model inference also goes through the Router. If that call fails, `AcRouterLlm` throws and the turn fails.
@@ -260,7 +259,8 @@ The stub sends the same chat reply to every path, so the session and MCP calls d
 
 ## Before you deploy
 
-- **Agent instruction and description**: `src/agent.ts` holds the sample expenses assistant's text. Replace it with your agent's.
+- **Agent instruction and description**: `src/agent.ts` holds a generic Workday assistant instruction. Replace it with your agent's.
+- **Logging**: `src/index.ts`, `src/ac-router-llm.ts`, and `src/router-mcp.ts` log request and response bodies (truncated), including prompts, model replies, and tool results, which can contain user data. Only the `X-ACR-Token` value and the `authorization`/`cookie` headers are redacted (`redactSecret` in `src/logger.ts`). Review and reduce this logging before production.
 - **Agent card**: in `wd_agent_card.json`, change `name`, `description`, `overview`, `url`, `version`, and the skill to your agent's.
 - **Tool ids**: the `agent_resource` ids under `workdayResources` in `wd_agent_card.json` register the sample's expenses tools. Keep the ones you use, remove the others, and add the ids of any other tools you need:
   - `find_expense_lines`: `8797ce815d30100021e9f9365c9a0000`
